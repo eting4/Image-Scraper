@@ -1,41 +1,52 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+from flask import Flask, jsonify, request
+from bs4 import BeautifulSoup
 import requests
-import os
 
-# Set up headless Chrome options
-options = Options()
-options.add_argument('--headless')
-options.add_argument('--disable-gpu')  
-options.add_argument('--window-size=1920,1080')
+app = Flask(__name__)
 
-# Launch headless browser
-driver = webdriver.Chrome(options=options)
-driver.get("https://readvagabond-manga.online/manga/vagabond-chapter-327/")
-print("Page title:", driver.title)
+# Extract image URLs from a chapter page
+def extract_images(link):
+    response = requests.get(link)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    img_elements = soup.find_all('img')
+    img_urls = [img['src'] for img in img_elements if img.get('src')]
+    return img_urls
 
-# Find all img elements
-img_elements = driver.find_elements(By.TAG_NAME, 'img')
+# Extract chapter links from a main index page
+def load_chapters(link):
+    response = requests.get(link)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    chapter_urls = []
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if 'chapter' in href:
+            chapter_urls.append(href)
+    return chapter_urls
 
-# Extract src attributes
-img_urls = [img.get_attribute('src') for img in img_elements if img.get_attribute('src')]
+# Route for extracting image links
+@app.route('/extract-images', methods=['GET'])
+def extract_images_endpoint():
+    link = request.args.get('link')
+    if not link:
+        return jsonify({"error": "No link provided"}), 400
+    try:
+        images = extract_images(link)
+        return jsonify({"images": images})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# Close the browser
-driver.quit()
+# Route for loading chapters
+@app.route('/load-chapters', methods=['GET'])
+def load_chapters_endpoint():
+    link = request.args.get('link')
+    if not link:
+        return jsonify({"error": "No link provided"}), 400
+    try:
+        chapters = load_chapters(link)
+        return jsonify({"chapters": chapters})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# Display all image URLs
-print(f"\nFound {len(img_urls)} images:")
-for url in img_urls:
-    print(url)
-
-# Optional: Save images locally
-# os.makedirs("vagabond_images", exist_ok=True)
-# for i, url in enumerate(img_urls):
-#     try:
-#         response = requests.get(url, timeout=10)
-#         if response.status_code == 200:
-#             with open(f"vagabond_images/image_{i+1}.jpg", "wb") as f:
-#                 f.write(response.content)
-#     except Exception as e:
-#         print(f"Failed to download image {i+1}: {e}")
+# Run the Flask app
+if __name__ == '__main__':
+    app.run(debug=True)
